@@ -1,0 +1,511 @@
+# Historical quotes
+
+The historical stock quotes API provides quote data for a list of stock symbols between the specified dates.
+
+The returned results are sorted by symbol first, then by the quote timestamp. This means that you are likely to see only one symbol in your first response if there are enough quotes for that symbol to hit the limit you requested.
+
+In these situations, if you keep requesting again with the `next_page_token` from the previous response, you will eventually reach the other symbols if any quotes were found for them.
+
+# OpenAPI definition
+
+```json
+{
+  "components": {
+    "headers": {
+      "ratelimit_limit": {
+        "description": "Request limit per minute.",
+        "example": 100,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "ratelimit_remaining": {
+        "description": "Request limit per minute remaining.",
+        "example": 90,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "ratelimit_reset": {
+        "description": "The UNIX epoch when the remaining quota changes.",
+        "example": 1674044551,
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "parameters": {
+      "end": {
+        "description": "The inclusive end of the interval. Format: RFC-3339 or YYYY-MM-DD.\nDefault: the current time if the user has a real-time access for the feed, otherwise 15 minutes before the current time.\n",
+        "examples": {
+          "RFC-3339 nanosecond": {
+            "summary": "RFC-3339 date-time with nanosecond accuracy",
+            "value": "2024-01-04T01:02:03.123456789Z"
+          },
+          "RFC-3339 second": {
+            "summary": "RFC-3339 date-time with second accuracy",
+            "value": "2024-01-04T00:00:00Z"
+          },
+          "RFC-3339 with timezone": {
+            "summary": "RFC-3339 date-time with time zone",
+            "value": "2024-01-04T09:30:00-04:00"
+          },
+          "date": {
+            "summary": "Date",
+            "value": "2024-01-04"
+          }
+        },
+        "in": "query",
+        "name": "end",
+        "required": false,
+        "schema": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "limit": {
+        "description": "The maximum number of data points to return in the response page.\nThe API may return less, even if there are more available data points in the requested interval.\nAlways check the `next_page_token` for more pages.\nThe limit applies to the total number of data points, not per symbol!\n",
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "schema": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "page_token": {
+        "description": "The pagination token from which to continue. The value to pass here is returned in specific requests when more data is available, usually because of a response result limit.\n",
+        "in": "query",
+        "name": "page_token",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "sort": {
+        "description": "Sort data in ascending or descending order.",
+        "in": "query",
+        "name": "sort",
+        "schema": {
+          "$ref": "#/components/schemas/sort"
+        }
+      },
+      "start": {
+        "description": "The inclusive start of the interval. Format: RFC-3339 or YYYY-MM-DD.\nDefault: the beginning of the current day, but at least 15 minutes ago if the user doesn't have real-time access for the feed.\n",
+        "examples": {
+          "RFC-3339 nanosecond": {
+            "summary": "RFC-3339 date-time with nanosecond accuracy",
+            "value": "2024-01-03T01:02:03.123456789Z"
+          },
+          "RFC-3339 second": {
+            "summary": "RFC-3339 date-time with second accuracy",
+            "value": "2024-01-03T00:00:00Z"
+          },
+          "RFC-3339 with timezone": {
+            "summary": "RFC-3339 date-time with time zone",
+            "value": "2024-01-03T09:30:00-04:00"
+          },
+          "date": {
+            "summary": "Date",
+            "value": "2024-01-03"
+          }
+        },
+        "in": "query",
+        "name": "start",
+        "required": false,
+        "schema": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "stock_asof": {
+        "description": "The as-of date of the queried stock symbol(s). Format: YYYY-MM-DD. Default: current day.\n\nThis date is used to identify the underlying entity of the provided symbol(s), so that name changes for this entity can be found. Data for past symbol(s) is returned if the query date range spans the name change.\n\nThe special value of \"-\" means symbol mapping is skipped. Data is returned based on the symbol alone without looking up previous names. The same happens if the queried symbol is not found on the given `asof` date.\n\nExample: FB was renamed to META in 2022-06-09. Querying META with an `asof` date after 2022-06-09 will also yield FB data. The data for the FB ticker will be labeled as META because they are considered the same underlying entity as of 2022-06-09. Querying FB with an `asof` date after 2022-06-09 will only return data with the FB ticker, not with META. But with an `asof` date before 2022-06-09, META will also be returned (as FB).\n",
+        "in": "query",
+        "name": "asof",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "stock_currency": {
+        "description": "The currency of all prices in ISO 4217 format. Default: USD.\n",
+        "in": "query",
+        "name": "currency",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "stock_historical_feed": {
+        "description": "The source feed of the data.\n - `sip`: all US exchanges\n - `iex`: Investors EXchange\n - `boats`: Blue Ocean ATS, overnight US trading data\n - `otc`: over-the-counter exchanges\n",
+        "in": "query",
+        "name": "feed",
+        "schema": {
+          "$ref": "#/components/schemas/stock_historical_feed"
+        }
+      },
+      "stock_symbols": {
+        "description": "A comma-separated list of stock symbols.",
+        "example": "AAPL,TSLA",
+        "in": "query",
+        "name": "symbols",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "400": {
+        "description": "One of the request parameters is invalid. See the returned message for details.\n",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/ratelimit_limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/ratelimit_remaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/ratelimit_reset"
+          }
+        }
+      },
+      "401": {
+        "description": "Authentication headers are missing or invalid. Make sure you authenticate your request with a valid API key.\n"
+      },
+      "403": {
+        "description": "The requested resource is forbidden.\n"
+      },
+      "429": {
+        "description": "Too many requests. You hit the rate limit. Use the X-RateLimit-... response headers to make sure you're under the rate limit.\n",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/ratelimit_limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/ratelimit_remaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/ratelimit_reset"
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error. We recommend retrying these later. If the issue persists, please contact us on [Slack](https://alpaca.markets/slack) or on the [Community Forum](https://forum.alpaca.markets/).\n"
+      }
+    },
+    "schemas": {
+      "next_page_token": {
+        "description": "Pagination token for the next page.",
+        "nullable": true,
+        "type": "string"
+      },
+      "sort": {
+        "default": "asc",
+        "description": "Sort data in ascending or descending order.",
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "type": "string",
+        "x-go-name": "TypeSort"
+      },
+      "stock_historical_feed": {
+        "default": "sip",
+        "enum": [
+          "iex",
+          "otc",
+          "sip",
+          "boats"
+        ],
+        "type": "string"
+      },
+      "stock_quote": {
+        "description": "The best bid and ask information for a given security.",
+        "example": {
+          "ap": 387.7,
+          "as": 1,
+          "ax": "C",
+          "bp": 387.67,
+          "bs": 1,
+          "bx": "N",
+          "c": [
+            "R"
+          ],
+          "t": "2021-02-06T13:35:08.946977536Z",
+          "z": "C"
+        },
+        "properties": {
+          "ap": {
+            "description": "Ask price. 0 means the security has no active ask.",
+            "format": "double",
+            "type": "number",
+            "x-go-name": "AskPrice"
+          },
+          "as": {
+            "description": "Ask size in shares (round lots prior to November 3, 2025).",
+            "format": "uint32",
+            "type": "integer",
+            "x-go-name": "AskSize"
+          },
+          "ax": {
+            "description": "Ask exchange. See `v2/stocks/meta/exchanges` for more details.",
+            "type": "string",
+            "x-go-name": "AskExchange"
+          },
+          "bp": {
+            "description": "Bid price. 0 means the security has no active bid.",
+            "format": "double",
+            "type": "number",
+            "x-go-name": "BidPrice"
+          },
+          "bs": {
+            "description": "Bid size in shares (round lots prior to November 3, 2025).",
+            "format": "uint32",
+            "type": "integer",
+            "x-go-name": "BidSize"
+          },
+          "bx": {
+            "description": "Bid exchange. See `v2/stocks/meta/exchanges` for more details.",
+            "type": "string",
+            "x-go-name": "BidExchange"
+          },
+          "c": {
+            "description": "Condition flags. See `v2/stocks/meta/conditions/quote` for more details. If the array contains one flag, it applies to both the bid and ask. If the array contains two flags, the first one applies to the bid and the second one to the ask.\n",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "Conditions"
+          },
+          "t": {
+            "$ref": "#/components/schemas/timestamp"
+          },
+          "z": {
+            "$ref": "#/components/schemas/stock_tape"
+          }
+        },
+        "required": [
+          "t",
+          "bx",
+          "bp",
+          "bs",
+          "ap",
+          "as",
+          "ax",
+          "c",
+          "z"
+        ],
+        "type": "object"
+      },
+      "stock_quotes_resp": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "next_page_token": {
+            "$ref": "#/components/schemas/next_page_token"
+          },
+          "quotes": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/stock_quote"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "quotes",
+          "next_page_token"
+        ],
+        "type": "object"
+      },
+      "stock_tape": {
+        "description": "- A: New York Stock Exchange\n- B: NYSE Arca, Bats, IEX and other regional exchanges\n- C: NASDAQ\n- N: Overnight\n- O: OTC\n",
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "N",
+          "O"
+        ],
+        "type": "string",
+        "x-go-name": "Tape"
+      },
+      "timestamp": {
+        "description": "Timestamp in RFC-3339 format with nanosecond precision.",
+        "format": "date-time",
+        "type": "string",
+        "x-go-name": "Timestamp"
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "in": "header",
+        "name": "APCA-API-KEY-ID",
+        "type": "apiKey"
+      },
+      "apiSecret": {
+        "in": "header",
+        "name": "APCA-API-SECRET-KEY",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "email": "support@alpaca.markets",
+      "name": "Alpaca Support",
+      "url": "https://alpaca.markets/support"
+    },
+    "description": "Access real-time and historical market data for US equities, options, crypto, and foreign exchange data through the Alpaca REST and WebSocket APIs. There are APIs for Stock Pricing, Option Pricing, Crypto Pricing, Forex, Logos, Fixed income, Corporate Actions, Screener, and News.\n",
+    "license": {
+      "name": "Creative Commons Attribution Share Alike 4.0 International",
+      "url": "https://spdx.org/licenses/CC-BY-SA-4.0.html"
+    },
+    "termsOfService": "https://s3.amazonaws.com/files.alpaca.markets/disclosures/library/TermsAndConditions.pdf",
+    "title": "Market Data API",
+    "version": "1.1"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/v2/stocks/quotes": {
+      "get": {
+        "description": "The historical stock quotes API provides quote data for a list of stock symbols between the specified dates.\n\nThe returned results are sorted by symbol first, then by the quote timestamp. This means that you are likely to see only one symbol in your first response if there are enough quotes for that symbol to hit the limit you requested.\n\nIn these situations, if you keep requesting again with the `next_page_token` from the previous response, you will eventually reach the other symbols if any quotes were found for them.",
+        "operationId": "StockQuotes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/stock_symbols"
+          },
+          {
+            "$ref": "#/components/parameters/start"
+          },
+          {
+            "$ref": "#/components/parameters/end"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/stock_asof"
+          },
+          {
+            "$ref": "#/components/parameters/stock_historical_feed"
+          },
+          {
+            "$ref": "#/components/parameters/stock_currency"
+          },
+          {
+            "$ref": "#/components/parameters/page_token"
+          },
+          {
+            "$ref": "#/components/parameters/sort"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "quotes": {
+                    "value": {
+                      "next_page_token": "QUFQTHwyMDIyLTAxLTAzVDA5OjAwOjAwLjAyODI5NDQ1MVp8MjM3NjQ0Qzg=",
+                      "quotes": {
+                        "AAPL": [
+                          {
+                            "ap": 0,
+                            "as": 0,
+                            "ax": " ",
+                            "bp": 177.92,
+                            "bs": 4,
+                            "bx": "Q",
+                            "c": [
+                              "Y"
+                            ],
+                            "t": "2022-01-03T09:00:00.028160898Z",
+                            "z": "C"
+                          },
+                          {
+                            "ap": 178.8,
+                            "as": 4,
+                            "ax": "Q",
+                            "bp": 177.92,
+                            "bs": 4,
+                            "bx": "Q",
+                            "c": [
+                              "R"
+                            ],
+                            "t": "2022-01-03T09:00:00.028294451Z",
+                            "z": "C"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/stock_quotes_resp"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/ratelimit_limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/ratelimit_remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/ratelimit_reset"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "summary": "Historical quotes",
+        "tags": [
+          "Stock"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "apiKey": [],
+      "apiSecret": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Production",
+      "url": "https://data.alpaca.markets"
+    },
+    {
+      "description": "Sandbox",
+      "url": "https://data.sandbox.alpaca.markets"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Endpoints for stocks.",
+      "name": "Stock"
+    }
+  ]
+}
+```
